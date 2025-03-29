@@ -32,25 +32,15 @@ export const signIn = async ({ email, password }: { email: string; password: str
 };
 
 export const signUp = async ({ email, password, name }: { email: string; password: string; name: string }) => {
-  const response = await supabase.auth.signUp({ 
+  // We don't need to manually create a profile record because the database has a trigger
+  // that automatically creates a profile when a new user is created
+  return supabase.auth.signUp({ 
     email, 
     password,
     options: {
       data: { name }
     }
   });
-  
-  if (response.data.user) {
-    // Create a profile record
-    await supabase.from('profiles').insert({
-      id: response.data.user.id,
-      name,
-      email,
-      created_at: new Date().toISOString(),
-    });
-  }
-  
-  return response;
 };
 
 export const signOut = async () => {

@@ -20,23 +20,38 @@ export default function SignUpForm() {
     setLoading(true);
 
     try {
-      const { error } = await signUp({ email, password, name });
+      console.log('Attempting sign up with:', { email, name, password: '****' });
+      const result = await signUp({ email, password, name });
+      console.log('Sign up result:', JSON.stringify(result, null, 2));
       
-      if (error) {
-        setError(error.message);
+      if (result.error) {
+        console.error('Sign up error details:', result.error);
+        setError(`Error: ${result.error.message} (code: ${result.error.status || 'unknown'})`);
         return;
       }
       
-      setMessage('Check your email for the confirmation link.');
+      if (!result.data?.user) {
+        setError('No user was created. Please try again.');
+        return;
+      }
+      
+      if (result.data?.user?.identities?.length === 0) {
+        // User already exists
+        setError('A user with this email already exists. Please sign in instead.');
+        return;
+      }
+
+      // Success - email confirmation sent
+      setMessage(`Account created for ${email}! ${result.data.user.email_confirmed_at ? 'You can now sign in.' : 'Check your email for the confirmation link.'}`);
       
       // After sign up, redirect to sign in
       setTimeout(() => {
         router.push('/sign-in');
       }, 3000);
       
-    } catch (err) {
-      setError('Something went wrong. Please try again.');
-      console.error(err);
+    } catch (err: any) {
+      console.error('Sign up exception details:', err);
+      setError(`Sign up failed: ${err?.message || 'Unknown error'}`);
     } finally {
       setLoading(false);
     }

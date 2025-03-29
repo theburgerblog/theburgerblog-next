@@ -1,13 +1,14 @@
 import { createServerComponentClient } from '@supabase/auth-helpers-nextjs';
 import { cookies } from 'next/headers';
 
-export function createServerSupabaseClient() {
-  return createServerComponentClient({ cookies });
+export async function createServerSupabaseClient() {
+  const cookieStore = cookies();
+  return createServerComponentClient({ cookies: () => cookieStore });
 }
 
 // Get current user on server
 export async function getServerUser() {
-  const supabase = createServerSupabaseClient();
+  const supabase = await createServerSupabaseClient();
   const { data: { user } } = await supabase.auth.getUser();
   
   if (!user) return null;
@@ -26,7 +27,7 @@ export async function getServerUser() {
 
 // Check if user is authenticated on server
 export async function isAuthenticatedOnServer() {
-  const supabase = createServerSupabaseClient();
+  const supabase = await createServerSupabaseClient();
   const { data: { session } } = await supabase.auth.getSession();
   return session !== null;
 } 

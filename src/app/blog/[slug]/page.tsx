@@ -15,6 +15,22 @@ interface PageParams {
   };
 }
 
+interface Comment {
+  id: string;
+  content: string;
+  createdAt: string;
+  user: {
+    name: string | null;
+    image: string | null;
+  };
+}
+
+interface UserProfile {
+  id: string;
+  name: string | null;
+  avatar_url: string | null;
+}
+
 export async function generateStaticParams() {
   const posts = getAllPosts();
   return posts.map((post) => ({
@@ -24,7 +40,8 @@ export async function generateStaticParams() {
 
 export async function generateMetadata({ params }: PageParams) {
   try {
-    const post = getPostBySlug(params.slug);
+    const slug = params.slug;
+    const post = getPostBySlug(slug);
     
     return {
       title: `${post.title} | TheBurgerBlog`,
@@ -51,7 +68,8 @@ export default async function PostPage({ params }: PageParams) {
   let post;
   
   try {
-    post = getPostBySlug(params.slug);
+    const slug = params.slug;
+    post = getPostBySlug(slug);
   } catch (_error) {
     notFound();
   }
@@ -63,20 +81,17 @@ export default async function PostPage({ params }: PageParams) {
   const galleryImages = post.images?.filter(img => img.type === 'gallery') || [];
   
   // Get comments from Supabase
-  let comments = [];
+  let comments: Comment[] = [];
   
   try {
-    const supabase = createServerSupabaseClient();
+    const supabase = await createServerSupabaseClient();
     const { data, error } = await supabase
       .from('comments')
       .select(`
         id,
         content,
         created_at,
-        profiles (
-          name,
-          avatar_url
-        )
+        user_id
       `)
       .eq('post_slug', params.slug)
       .order('created_at', { ascending: false });
@@ -85,16 +100,34 @@ export default async function PostPage({ params }: PageParams) {
       throw error;
     }
 
+    // Get user profiles in a separate query
+    const userProfiles: Record<string, UserProfile> = {};
+    if (data && data.length > 0) {
+      const userIds = [...new Set(data.map(comment => comment.user_id))];
+      const { data: profiles } = await supabase
+        .from('profiles')
+        .select('id, name, avatar_url')
+        .in('id', userIds);
+        
+      if (profiles) {
+        profiles.forEach((profile: UserProfile) => {
+          userProfiles[profile.id] = profile;
+        });
+      }
+    }
+
     // Format comments
-    comments = data.map(comment => ({
-      id: comment.id,
-      content: comment.content,
-      createdAt: comment.created_at,
-      user: {
-        name: comment.profiles?.name || 'Anonymous',
-        image: comment.profiles?.avatar_url || null,
-      },
-    }));
+    if (data) {
+      comments = data.map(comment => ({
+        id: comment.id,
+        content: comment.content,
+        createdAt: comment.created_at,
+        user: {
+          name: comment.user_id && userProfiles[comment.user_id]?.name || 'Anonymous',
+          image: comment.user_id && userProfiles[comment.user_id]?.avatar_url || null,
+        },
+      }));
+    }
   } catch (commentError) {
     console.error('Error fetching comments:', commentError);
   }

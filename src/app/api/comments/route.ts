@@ -8,6 +8,12 @@ const commentSchema = z.object({
   postSlug: z.string().min(1),
 });
 
+interface UserProfile {
+  id: string;
+  name: string | null;
+  avatar_url: string | null;
+}
+
 // GET handler to fetch comments for a post
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
@@ -20,7 +26,7 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const supabase = createServerSupabaseClient();
+  const supabase = await createServerSupabaseClient();
 
   try {
     const { data, error } = await supabase
@@ -29,10 +35,7 @@ export async function GET(request: NextRequest) {
         id,
         content,
         created_at,
-        profiles (
-          name,
-          avatar_url
-        )
+        user_id
       `)
       .eq('post_slug', postSlug)
       .order('created_at', { ascending: false });
@@ -41,14 +44,30 @@ export async function GET(request: NextRequest) {
       throw error;
     }
 
+    // Get user profiles in a separate query
+    const userProfiles: Record<string, UserProfile> = {};
+    if (data && data.length > 0) {
+      const userIds = [...new Set(data.map(comment => comment.user_id))];
+      const { data: profiles } = await supabase
+        .from('profiles')
+        .select('id, name, avatar_url')
+        .in('id', userIds);
+        
+      if (profiles) {
+        profiles.forEach((profile: UserProfile) => {
+          userProfiles[profile.id] = profile;
+        });
+      }
+    }
+
     // Format comments to match the expected structure
     const formattedComments = data.map(comment => ({
       id: comment.id,
       content: comment.content,
       createdAt: comment.created_at,
       user: {
-        name: comment.profiles?.name || 'Anonymous',
-        image: comment.profiles?.avatar_url || null,
+        name: comment.user_id && userProfiles[comment.user_id]?.name || 'Anonymous',
+        image: comment.user_id && userProfiles[comment.user_id]?.avatar_url || null,
       },
     }));
 
@@ -64,7 +83,7 @@ export async function GET(request: NextRequest) {
 
 // POST handler to create a new comment
 export async function POST(request: NextRequest) {
-  const supabase = createServerSupabaseClient();
+  const supabase = await createServerSupabaseClient();
   const { data: { session } } = await supabase.auth.getSession();
   
   if (!session) {
@@ -101,10 +120,7 @@ export async function POST(request: NextRequest) {
         id,
         content,
         created_at,
-        profiles (
-          name,
-          avatar_url
-        )
+        user_id
       `)
       .single();
 
@@ -112,14 +128,21 @@ export async function POST(request: NextRequest) {
       throw error;
     }
 
+    // Get user profile in a separate query
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('name, avatar_url')
+      .eq('id', session.user.id)
+      .single();
+
     // Format comment to match the expected structure
     const formattedComment = {
       id: comment.id,
       content: comment.content,
       createdAt: comment.created_at,
       user: {
-        name: comment.profiles?.name || 'Anonymous',
-        image: comment.profiles?.avatar_url || null,
+        name: profile?.name || 'Anonymous',
+        image: profile?.avatar_url || null,
       },
     };
 

@@ -1,15 +1,24 @@
 'use client';
 
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useEffect } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { signIn } from '@/lib/supabase';
 
 export default function SignInForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+
+  // Check for error in URL query params (from auth callback)
+  useEffect(() => {
+    const errorParam = searchParams?.get('error');
+    if (errorParam) {
+      setError(`Authentication error: ${decodeURIComponent(errorParam)}`);
+    }
+  }, [searchParams]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -17,19 +26,31 @@ export default function SignInForm() {
     setLoading(true);
 
     try {
-      const { error } = await signIn({ email, password });
+      console.log('Attempting sign in with:', { email, password: '****' });
+      const result = await signIn({ email, password });
+      console.log('Sign in result:', JSON.stringify({
+        error: result.error,
+        session: result.data.session ? 'Session exists' : 'No session',
+        user: result.data.user ? 'User exists' : 'No user'
+      }, null, 2));
       
-      if (error) {
-        setError(error.message);
+      if (result.error) {
+        console.error('Sign in error details:', result.error);
+        setError(`Error: ${result.error.message} (code: ${result.error.status || 'unknown'})`);
+        return;
+      }
+      
+      if (!result.data?.session) {
+        setError('Authentication failed: No session was created');
         return;
       }
       
       // Redirect to admin page after successful login
       router.push('/admin');
       router.refresh();
-    } catch (err) {
-      setError('Something went wrong. Please try again.');
-      console.error(err);
+    } catch (err: any) {
+      console.error('Sign in exception details:', err);
+      setError(`Sign in failed: ${err?.message || 'Unknown error'}`);
     } finally {
       setLoading(false);
     }
